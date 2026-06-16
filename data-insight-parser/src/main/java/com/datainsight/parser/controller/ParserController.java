@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.PrintWriter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -116,5 +118,38 @@ public class ParserController {
         dataFileMapper.updateById(file);
 
         return R.ok(Map.of("duplicatesRemoved", removed, "newRowCount", unique.size()));
+    }
+
+    /** 导出数据为 CSV */
+    @GetMapping("/export/{fileId}")
+    public void export(@PathVariable Long fileId, HttpServletResponse response) throws Exception {
+        DataFile file = dataFileMapper.selectById(fileId);
+        if (file == null) throw new BizException("文件不存在");
+
+        List<ColumnMeta> columns = columnMetaMapper.selectList(
+                new LambdaQueryWrapper<ColumnMeta>().eq(ColumnMeta::getFileId, fileId).orderByAsc(ColumnMeta::getOrdinalPosition));
+        List<DataRecord> records = dataRecordMapper.selectList(
+                new LambdaQueryWrapper<DataRecord>().eq(DataRecord::getFileId, fileId).orderByAsc(DataRecord::getRowIndex));
+
+        response.setContentType("text/csv;charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + file.getOriginalName() + "\"");
+
+        PrintWriter w = response.getWriter();
+        // BOM for Excel UTF-8 compatibility
+        w.print('﻿');
+        // Header
+        w.println(columns.stream().map(ColumnMeta::getColumnName).collect(Collectors.joining(",")));
+        // Data
+        for (DataRecord r : records) {
+            try {
+                Map<String, Object> row = new com.fasterxml.jackson.databind.ObjectMapper().readValue(r.getRowData(), Map.class);
+                w.println(columns.stream().map(c -> {
+                    Object v = row.get("col_" + c.getOrdinalPosition());
+                    String s = v != null ? v.toString() : "";
+                    return s.contains(",") ? "\"" + s.replace("\"", "\"\"") + "\"" : s;
+                }).collect(Collectors.joining(",")));
+            } catch (Exception ignored) {}
+        }
+        w.flush();
     }
 }
