@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # ========== 基础设施 ==========
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: data-insight-nacos
+    environment:
+      - MODE=standalone
+      - PREFER_HOST_MODE=hostname
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    volumes:
+      - ./docker/nacos/logs:/home/nacos/logs
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: data-insight-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-1234}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker/mysql/data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: data-insight-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./docker/redis/data:/data
+    restart: unless-stopped
+
+  # ========== 微服务 ==========
+  data-insight-user:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        MODULE: data-insight-user
+    container_name: data-insight-user
+    ports:
+      - "8081:8081"
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-1234}
+      - REDIS_HOST=redis
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  data-insight-parser:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        MODULE: data-insight-parser
+    container_name: data-insight-parser
+    ports:
+      - "8082:8082"
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-1234}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  data-insight-analyzer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        MODULE: data-insight-analyzer
+    container_name: data-insight-analyzer
+    ports:
+      - "8083:8083"
+    environment:
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-1234}
+      - REDIS_HOST=redis
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  data-insight-viz:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        MODULE: data-insight-viz
+    container_name: data-insight-viz
+    ports:
+      - "8084:8084"
+    environment:
+      - NACOS_ADDR=nacos:8848
+    depends_on:
+      - data-insight-parser
+    restart: unless-stopped
+
+  data-insight-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        MODULE: data-insight-gateway
+    container_name: data-insight-gateway
+    ports:
+      - "9999:9999"
+    environment:
+      - NACOS_ADDR=nacos:8848
+    depends_on:
+      - nacos
+    restart: unless-stopped

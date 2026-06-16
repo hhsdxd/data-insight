@@ -1,0 +1,57 @@
+server:
+  port: 9999
+
+spring:
+  application:
+    name: data-insight-gateway
+  config:
+    import: optional:nacos:${spring.application.name}.yaml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+      config:
+        server-addr: ${NACOS_ADDR:localhost:8848}
+        file-extension: yaml
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # 用户服务
+        - id: user-service
+          uri: lb://data-insight-user
+          predicates:
+            - Path=/api/user/**
+        # 数据解析服务
+        - id: parser-service
+          uri: lb://data-insight-parser
+          predicates:
+            - Path=/api/data/**
+        # AI分析服务
+        - id: analyzer-service
+          uri: lb://data-insight-analyzer
+          predicates:
+            - Path=/api/ai/**
+        # 可视化服务
+        - id: viz-service
+          uri: lb://data-insight-viz
+          predicates:
+            - Path=/api/viz/**
+      # 全局跨域
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+
+  # 排除 security 自动配置（开发阶段不启用）
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+
+logging:
+  level:
+    com.datainsight: debug
