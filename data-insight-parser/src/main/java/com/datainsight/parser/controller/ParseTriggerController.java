@@ -23,6 +23,7 @@ public class ParseTriggerController {
 
     private final DataFileMapper dataFileMapper;
     private final CsvParserService csvParserService;
+    private final com.datainsight.parser.service.ExcelParserService excelParserService;
 
     @PostMapping("/trigger-parse")
     public R<DataFile> triggerParse(@RequestBody Map<String, Object> body) {
@@ -31,13 +32,9 @@ public class ParseTriggerController {
         Long fileSize = body.get("fileSize") != null ? Long.valueOf(body.get("fileSize").toString()) : 0L;
         Long userId = body.get("userId") != null ? Long.valueOf(body.get("userId").toString()) : 1L;
 
-        // 检查文件存在
         File f = new File(filePath);
-        if (!f.exists()) {
-            throw new BizException("文件不存在: " + filePath);
-        }
+        if (!f.exists()) throw new BizException("文件不存在: " + filePath);
 
-        // 创建 DataFile 记录
         DataFile dataFile = new DataFile();
         dataFile.setUserId(userId);
         dataFile.setOriginalName(originalName);
@@ -48,10 +45,14 @@ public class ParseTriggerController {
 
         log.info("创建解析任务: fileId={}, name={}", dataFile.getId(), originalName);
 
-        // 同步解析（开发阶段）
-        csvParserService.parse(dataFile.getId());
+        // 根据扩展名选择解析器
+        String name = originalName.toLowerCase();
+        if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+            excelParserService.parse(dataFile.getId());
+        } else {
+            csvParserService.parse(dataFile.getId());
+        }
 
-        // 重新查询获取最新状态
         dataFile = dataFileMapper.selectById(dataFile.getId());
         return R.ok(dataFile);
     }
