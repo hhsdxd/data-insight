@@ -72,6 +72,18 @@ public class UserController {
         return R.ok(user);
     }
 
+    @PutMapping("/update")
+    public R<Void> update(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        Long userId = getUserId(request);
+        User user = userMapper.selectById(userId);
+        if (user == null) throw new BizException("用户不存在");
+
+        if (body.containsKey("email")) user.setEmail(body.get("email"));
+        if (body.containsKey("avatar")) user.setAvatar(body.get("avatar"));
+        userMapper.updateById(user);
+        return R.ok();
+    }
+
     /** 优先从 Gateway 传递的 Header 获取，兼容直连模式从 Authorization 解析 */
     private Long getUserId(HttpServletRequest request) {
         String userIdHeader = request.getHeader("X-User-Id");

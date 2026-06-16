@@ -14,8 +14,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -89,5 +89,32 @@ public class ParserController {
                 "file", file,
                 "columns", columns
         ));
+    }
+
+    /** 数据清洗：去重 + 填空值 */
+    @PostMapping("/clean/{fileId}")
+    public R<Map<String, Object>> clean(@PathVariable Long fileId) {
+        DataFile file = dataFileMapper.selectById(fileId);
+        if (file == null) throw new BizException("文件不存在");
+
+        List<DataRecord> records = dataRecordMapper.selectList(
+                new LambdaQueryWrapper<DataRecord>().eq(DataRecord::getFileId, fileId));
+
+        // 去重（按 rowData 内容）
+        Set<String> seen = new HashSet<>();
+        List<DataRecord> unique = new ArrayList<>();
+        for (DataRecord r : records) {
+            if (seen.add(r.getRowData())) unique.add(r);
+        }
+        int removed = records.size() - unique.size();
+
+        // 删除所有旧记录，重新插入去重后的
+        dataRecordMapper.delete(new LambdaQueryWrapper<DataRecord>().eq(DataRecord::getFileId, fileId));
+        for (DataRecord r : unique) dataRecordMapper.insert(r);
+
+        file.setRowCount(unique.size());
+        dataFileMapper.updateById(file);
+
+        return R.ok(Map.of("duplicatesRemoved", removed, "newRowCount", unique.size()));
     }
 }
